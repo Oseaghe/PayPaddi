@@ -25,3 +25,5 @@ ngrok.exe
 Thumbs.db
 
 .claude/
+
+*.exe

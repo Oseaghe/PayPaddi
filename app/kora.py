@@ -1,67 +1,55 @@
 import hashlib
 import hmac
+import json
+import os
 import httpx
-from app.config import settings
+
+KORA_BASE_URL = os.getenv("KORA_BASE_URL", "https://api.korapay.com/merchant/api/v1")
+KORA_SECRET_KEY = os.getenv("KORA_SECRET_KEY", "")
+APP_BASE_URL = os.getenv("APP_BASE_URL", "")
 
 
-class KoraClient:
-    def __init__(self):
-        self.base_url = settings.KORA_BASE_URL
-        self.headers = {
-            "Authorization": f"Bearer {settings.KORA_SECRET_KEY}",
-            "Content-Type": "application/json",
-        }
-
-    async def create_payment_link(
-        self,
-        amount: float,
-        currency: str,
-        reference: str,
-        description: str,
-        merchant_name: str,
-        customer_name: str | None = None,
-        customer_phone: str | None = None,
-    ) -> dict:
-        payload = {
-            "amount": amount,
-            "currency": currency,
-            "reference": reference,
-            "narration": description or "Payment request",
-            "merchant_name": merchant_name,
-            "notification_url": f"{settings.APP_BASE_URL}/webhooks/kora",
-        }
-        if customer_name:
-            payload["customer"] = {"name": customer_name}
-        if customer_phone:
-            payload.setdefault("customer", {})["phone"] = customer_phone
-
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                f"{self.base_url}/transactions/initialize",
-                json=payload,
-                headers=self.headers,
-                timeout=30,
-            )
-            resp.raise_for_status()
-            return resp.json()
-
-    async def get_transaction(self, reference: str) -> dict:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                f"{self.base_url}/transactions/{reference}",
-                headers=self.headers,
-                timeout=30,
-            )
-            resp.raise_for_status()
-            return resp.json()
-
-    def verify_webhook_signature(self, payload_bytes: bytes, signature: str) -> bool:
-        expected = hmac.new(
-            settings.KORA_WEBHOOK_SECRET.encode(),
-            payload_bytes,
-            hashlib.sha512,
-        ).hexdigest()
-        return hmac.compare_digest(expected, signature)
+def _headers() -> dict:
+    return {
+        "Authorization": f"Bearer {KORA_SECRET_KEY}",
+        "Content-Type": "application/json",
+    }
 
 
-kora_client = KoraClient()
+async def create_payment_link(
+    reference: str,
+    amount: float,
+    description: str,
+    customer_name: str = None,
+) -> str:
+    payload = {
+        "amount": amount,
+        "currency": "NGN",
+        "reference": reference,
+        "narration": description or "Payment request",
+        "notification_url": f"{APP_BASE_URL}/webhooks/kora",
+        "customer": {
+            "name": customer_name or "Customer",
+            "email": "customer@paypaddi.com",
+        },
+    }
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            f"{KORA_BASE_URL}/charges/initialize",
+            json=payload,
+            headers=_headers(),
+            timeout=30,
+        )
+        resp.raise_for_status()
+        data = resp.json().get("data", {})
+        return data.get("checkout_url") or data.get("link") or ""
+
+
+def verify_webhook(payload: dict, signature: str) -> bool:
+    data_str = json.dumps(payload, separators=(",", ":"))
+    expected = hmac.new(
+        KORA_SECRET_KEY.encode(),
+        data_str.encode(),
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(expected, signature)
