@@ -27,12 +27,13 @@ async def create_payment_link(
         "currency": "NGN",
         "reference": reference,
         "narration": description or "Payment request",
-        "notification_url": f"{APP_BASE_URL}/webhooks/kora",
         "customer": {
             "name": customer_name or "Customer",
             "email": "customer@paypaddi.com",
         },
     }
+    if APP_BASE_URL:
+        payload["notification_url"] = f"{APP_BASE_URL}/webhooks/kora"
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             f"{KORA_BASE_URL}/charges/initialize",
@@ -40,6 +41,8 @@ async def create_payment_link(
             headers=_headers(),
             timeout=30,
         )
+        if not resp.is_success:
+            print(f"[kora] {resp.status_code} error body: {resp.text}")
         resp.raise_for_status()
         data = resp.json().get("data", {})
         return data.get("checkout_url") or data.get("link") or ""
