@@ -3,7 +3,8 @@ import sqlite3
 import uuid
 from datetime import datetime, timezone, timedelta
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "kora.db")
+_data_dir = os.getenv("DATA_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+DB_PATH = os.path.join(_data_dir, "kora.db")
 
 
 def get_conn():
